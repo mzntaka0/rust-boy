@@ -113,20 +113,38 @@ impl IO16<Reg16> for Cpu {
 
 impl IO8<Imm8> for Cpu {
     fn read8(&mut self, bus: &Peripherals, _: Imm8) -> Option<u8> {
-        static STEP: AtomicU8 = AtomicU8::new(0);
-        static VAL8: AtomicU8 = AtomicU8::new(0);
-
-        match STEP.load(Relaxed) {
-            0 => {
+        step!(None, {
+            0: {
                 VAL8.store(bus.read(self.regs.pc), Relaxed);
                 self.regs.pc = self.regs.pc.wrapping_add(1);
-                STEP.fetch_add(1, Relaxed);
-                None
+                return None;
+            },
+            1: {
+                go!(0);
+                return Some(VAL8.load(Relaxed));
             }
-            1 => {
-                STEP.store(0, Relaxed);
-                Some(VAL8.load(Relaxed))
+        });
+    }
+
+    fn write8(&mut self, _: &mut Peripherals, _: Imm8, _: u8) -> Option<()> {
+        unreachable!()
+    }
+}
+
+impl IO16<Imm16> for Cpu {
+    fn read16(&mut self, bus: &Peripherals, _: Imm16) -> Option<u16> {
+        step!(None, {
+            0: if let Some(lo) = self.read8(bus, Imm8) {
+                VAL8.store(lo, Relaxed);
+                go!(1);
+            },
+            1: if let Some(hi) = self.read8(bus, Imm8) {
+                VAL16.store(u16::from_le_bytes([VAL8.load(Relaxed), hi]), Relaxed);
+            },
+            2: {
+                go!(0);
+                return Some(VAL16.load(Relaxed));
             }
-        }
+        })
     }
 }
